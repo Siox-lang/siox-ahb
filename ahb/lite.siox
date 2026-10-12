@@ -1,0 +1,46 @@
+module ahb::lite;
+
+// AMBA AHB-Lite (ARM IHI 0033): a pipelined single-manager bus. The address
+// phase of one transfer overlaps the data phase of the previous one; `hready`
+// low stretches the data phase. `A` is the address width and `D` the data
+// width.
+//
+// This is the point-to-point form. With several Subordinates, the
+// interconnect decodes `hsel` and multiplexes each `hreadyout` back to
+// `hready`. HCLK and HRESETn stay ordinary ports of the endpoint entities.
+
+use std::bits::unsigned;
+
+pub struct AhbLite<A: integer, D: integer> {
+    pub haddr: unsigned[A],
+    pub hburst: unsigned[3],
+    pub hmastlock: Bit,
+    pub hprot: unsigned[4],
+    pub hsize: unsigned[3],
+    pub htrans: unsigned[2],
+    pub hwrite: Bit,
+    pub hwdata: unsigned[D],
+    pub hrdata: unsigned[D],
+    pub hready: Bit,
+    pub hresp: Bit       // '0' OKAY, '1' ERROR
+}
+
+pub view Manager<A: integer, D: integer> for AhbLite<A, D> {
+    haddr out, hburst out, hmastlock out, hprot out, hsize out, htrans out,
+    hwrite out, hwdata out, hrdata in, hready in, hresp in
+}
+
+pub view Subordinate<A: integer, D: integer> for AhbLite<A, D> {
+    haddr in, hburst in, hmastlock in, hprot in, hsize in, htrans in,
+    hwrite in, hwdata in, hrdata out, hready out, hresp out
+}
+
+// `htrans` encodings.
+pub const IDLE: integer = 0;
+pub const BUSY: integer = 1;
+pub const NONSEQ: integer = 2;
+pub const SEQ: integer = 3;
+
+// `hburst` encodings.
+pub const SINGLE: integer = 0;
+pub const INCR: integer = 1;

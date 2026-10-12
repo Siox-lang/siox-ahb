@@ -1,0 +1,45 @@
+module lite_test;
+
+use std::bits::unsigned;
+use ahb::lite::{AhbLite, Subordinate, NONSEQ, IDLE};
+
+// A one-register Subordinate with no wait states: the address phase records
+// a write, the following data phase stores `hwdata`.
+entity Register { clk: Bit in, bus: AhbLite<32, 32> Subordinate }
+impl Register {
+    let value: unsigned[32] = 0;
+    let write_pending: Bit = '0';
+    step: process {
+        if clk.rising() {
+            if write_pending {
+                value = bus.hwdata;
+            }
+            write_pending = if bus.htrans == NONSEQ { bus.hwrite } else { '0' };
+        }
+    }
+    bus.hrdata = value;
+    bus.hready = '1';
+    bus.hresp = '0';
+}
+
+#[test]
+entity AhbLiteTest {}
+impl AhbLiteTest {
+    let clk: Bit = '0';
+    let bus: AhbLite<32, 32>;
+    let dut: Register = { .clk = clk, .bus = bus };
+
+    bus.hburst = 0; bus.hmastlock = '0'; bus.hprot = 3; bus.hsize = 2;
+    // Address phase of the write.
+    bus.haddr = 0x100; bus.htrans = NONSEQ; bus.hwrite = '1';
+    await 1ns;
+    clk = '1'; await 1ns; clk = '0';
+    // Data phase of the write overlaps the next address phase (a read).
+    bus.hwdata = 0xA5A5_0F0F; bus.htrans = NONSEQ; bus.hwrite = '0';
+    await 1ns;
+    assert!(bus.hready == '1', "no wait states");
+    clk = '1'; await 1ns; clk = '0';
+    bus.htrans = IDLE;
+    await 1ns;
+    assert!(bus.hrdata == 0xA5A5_0F0F and bus.hresp == '0', "read data phase returns the written word");
+}
