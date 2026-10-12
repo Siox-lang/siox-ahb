@@ -5,9 +5,10 @@ module ahb::lite;
 // low stretches the data phase. `A` is the address width and `D` the data
 // width.
 //
-// This is the point-to-point form. With several Subordinates, the
-// interconnect decodes `hsel` and multiplexes each `hreadyout` back to
-// `hready`. HCLK and HRESETn stay ordinary ports of the endpoint entities.
+// This is the point-to-point form: a Subordinate drives `hready` itself and
+// has no `hsel`. With several Subordinates, `Interconnect` below decodes the
+// address and multiplexes the responses. HCLK and HRESETn stay ordinary
+// ports of the endpoint entities.
 
 use std::bits::unsigned;
 
@@ -44,3 +45,68 @@ pub const SEQ: integer = 3;
 // `hburst` encodings.
 pub const SINGLE: integer = 0;
 pub const INCR: integer = 1;
+
+// One Manager to `N` Subordinates. Subordinate `i` owns the `2^REGION` bytes
+// at `i << REGION`. It stands in for the spec's decoder and multiplexer over
+// point-to-point Subordinates: one that is not addressed, or that is
+// addressed while another stretches its data phase, sees `htrans = IDLE`,
+// so it never needs `hsel`. Data-phase responses come from the Subordinate
+// addressed in the previous address phase. An access past the last one gets
+// the two-cycle `ERROR` response.
+pub entity Interconnect<A: integer, D: integer, N: integer, REGION: integer> {
+    clk: Bit in,
+    up: AhbLite<A, D> Subordinate,
+    down: AhbLite<A, D>[N] Manager
+}
+
+impl<A: integer, D: integer, N: integer, REGION: integer> Interconnect<A, D, N, REGION> {
+    let index: unsigned[A];
+    // The Subordinate whose data phase is running, and the error response's
+    // cycle (0 none, 1 first with `hready` low, 2 second).
+    let owner: unsigned[A] = 0;
+    let error: unsigned[2] = 0;
+    index = up.haddr >> REGION;
+
+    track: process {
+        if clk.rising() {
+            if error == 1 {
+                error = 2;
+            } else if up.hready {
+                owner = index;
+                error = 0;
+                if index >= N and up.htrans >= NONSEQ {
+                    error = 1;
+                }
+            }
+        }
+    }
+
+    for i in 0..N - 1 {
+        down[i].haddr = up.haddr;
+        down[i].hburst = up.hburst;
+        down[i].hmastlock = up.hmastlock;
+        down[i].hprot = up.hprot;
+        down[i].hsize = up.hsize;
+        down[i].hwrite = up.hwrite;
+        down[i].hwdata = up.hwdata;
+        down[i].htrans = if index == i { if up.hready { up.htrans } else { IDLE } } else { IDLE };
+    }
+
+    if error == 1 {
+        up.hready = '0';
+        up.hresp = '1';
+        up.hrdata = 0;
+    } else if error == 2 {
+        up.hready = '1';
+        up.hresp = '1';
+        up.hrdata = 0;
+    } else if owner < N {
+        up.hready = down[owner].hready;
+        up.hresp = down[owner].hresp;
+        up.hrdata = down[owner].hrdata;
+    } else {
+        up.hready = '1';
+        up.hresp = '0';
+        up.hrdata = 0;
+    }
+}

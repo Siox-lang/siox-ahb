@@ -24,12 +24,18 @@ entity Peripheral { clk: Bit in, bus: AhbLite<32, 32> Subordinate }
 
 A parent connects a `Manager` and a `Subordinate` through one `let wire: AhbLite<32, 32>;`.
 
+## Components
+
+| Entity | What it does |
+|---|---|
+| `ahb::lite::Interconnect<A, D, N, REGION>` | One Manager to `N` Subordinates: the spec's decoder and multiplexer. Subordinate `i` owns the `2^REGION` bytes at `i << REGION`. Subordinates that aren't addressed see `htrans = IDLE`, so point-to-point Subordinates need no `hsel`. Unmapped addresses get the two-cycle `ERROR` response. |
+
 ## Test
 
-Each `<module>_test.siox` drives a small endpoint from a testbench:
+Each `*_test.siox` drives an endpoint or component from a testbench:
 
 ```bash
 sioxc --std <sioxc>/std --test lite_test.siox -o lite_test && ./lite_test
 ```
 
-Needs a `sioxc` with Siox-lang/sioxc#68: width-parameterised struct ports.
+Needs a `sioxc` with Siox-lang/sioxc#69: arrays of view ports.

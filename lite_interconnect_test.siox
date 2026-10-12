@@ -1,0 +1,72 @@
+module lite_interconnect_test;
+
+use std::bits::unsigned;
+use ahb::lite::{AhbLite, Subordinate, Interconnect, NONSEQ, IDLE};
+
+// A one-register Subordinate with no wait states: the address phase records
+// a write, the following data phase stores `hwdata`.
+entity Register { clk: Bit in, bus: AhbLite<32, 32> Subordinate }
+impl Register {
+    let value: unsigned[32] = 0;
+    let write_pending: Bit = '0';
+    step: process {
+        if clk.rising() {
+            if write_pending {
+                value = bus.hwdata;
+            }
+            write_pending = if bus.htrans == NONSEQ { bus.hwrite } else { '0' };
+        }
+    }
+    bus.hrdata = value;
+    bus.hready = '1';
+    bus.hresp = '0';
+}
+
+// Two registers behind the interconnect, 1 KiB apart.
+entity System { clk: Bit in, up: AhbLite<32, 32> Subordinate }
+impl System {
+    let down: AhbLite<32, 32>[2];
+    let bus: Interconnect<32, 32, 2, 10> = { .clk = clk, .up = up, .down = down };
+    let r0: Register = { .clk = clk, .bus = down[0] };
+    let r1: Register = { .clk = clk, .bus = down[1] };
+}
+
+#[test]
+entity LiteInterconnectTest {}
+impl LiteInterconnectTest {
+    let clk: Bit = '0';
+    let bus: AhbLite<32, 32>;
+    let dut: System = { .clk = clk, .up = bus };
+    bus.hburst = 0; bus.hmastlock = '0'; bus.hprot = 3; bus.hsize = 2;
+
+    // Back-to-back writes to both registers: each data phase overlaps the
+    // next address phase.
+    bus.haddr = 0x000; bus.htrans = NONSEQ; bus.hwrite = '1';
+    await 1ns; clk = '1'; await 1ns; clk = '0';
+    bus.hwdata = 0xAAAA; bus.haddr = 0x400;
+    await 1ns; clk = '1'; await 1ns; clk = '0';
+    bus.hwdata = 0xBBBB; bus.htrans = IDLE; bus.hwrite = '0';
+    await 1ns; clk = '1'; await 1ns; clk = '0';
+
+    // Read both back.
+    bus.haddr = 0x000; bus.htrans = NONSEQ;
+    await 1ns; clk = '1'; await 1ns; clk = '0';
+    bus.haddr = 0x400;
+    await 1ns;
+    assert!(bus.hready == '1' and bus.hrdata == 0xAAAA, "register 0 answers its data phase");
+    clk = '1'; await 1ns; clk = '0';
+    bus.htrans = IDLE;
+    await 1ns;
+    assert!(bus.hrdata == 0xBBBB and bus.hresp == '0', "register 1 answers the next one");
+    clk = '1'; await 1ns; clk = '0';
+
+    // An unmapped address: hready low with ERROR, then high with ERROR.
+    bus.haddr = 0x800; bus.htrans = NONSEQ;
+    await 1ns; clk = '1'; await 1ns; clk = '0';
+    bus.htrans = IDLE;
+    await 1ns;
+    assert!(bus.hready == '0' and bus.hresp == '1', "first error cycle");
+    clk = '1'; await 1ns; clk = '0';
+    await 1ns;
+    assert!(bus.hready == '1' and bus.hresp == '1', "second error cycle");
+}
