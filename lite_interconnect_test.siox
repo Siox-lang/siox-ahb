@@ -1,7 +1,7 @@
 module lite_interconnect_test;
 
 use std::bits::unsigned;
-use ahb::lite::{AhbLite, Subordinate, Interconnect, NONSEQ, IDLE};
+use ahb::lite::{AhbLite, Subordinate, Interconnect, NONSEQ, IDLE, OKAY, ERROR};
 
 // A one-register Subordinate with no wait states: the address phase records
 // a write, the following data phase stores `hwdata`.
@@ -14,12 +14,12 @@ impl Register {
             if write_pending {
                 value = bus.hwdata;
             }
-            write_pending = if bus.htrans == NONSEQ { bus.hwrite } else { '0' };
+            write_pending = Bit(bus.htrans == NONSEQ) and bus.hwrite;
         }
     }
     bus.hrdata = value;
     bus.hready = '1';
-    bus.hresp = '0';
+    bus.hresp = OKAY;
 }
 
 // Two registers behind the interconnect, 1 KiB apart.
@@ -57,7 +57,7 @@ impl LiteInterconnectTest {
     clk = '1'; await 1ns; clk = '0';
     bus.htrans = IDLE;
     await 1ns;
-    assert!(bus.hrdata == 0xBBBB and bus.hresp == '0', "register 1 answers the next one");
+    assert!(bus.hrdata == 0xBBBB and bus.hresp == OKAY, "register 1 answers the next one");
     clk = '1'; await 1ns; clk = '0';
 
     // An unmapped address: hready low with ERROR, then high with ERROR.
@@ -65,8 +65,8 @@ impl LiteInterconnectTest {
     await 1ns; clk = '1'; await 1ns; clk = '0';
     bus.htrans = IDLE;
     await 1ns;
-    assert!(bus.hready == '0' and bus.hresp == '1', "first error cycle");
+    assert!(bus.hready == '0' and bus.hresp == ERROR, "first error cycle");
     clk = '1'; await 1ns; clk = '0';
     await 1ns;
-    assert!(bus.hready == '1' and bus.hresp == '1', "second error cycle");
+    assert!(bus.hready == '1' and bus.hresp == ERROR, "second error cycle");
 }

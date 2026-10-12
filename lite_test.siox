@@ -1,7 +1,7 @@
 module lite_test;
 
 use std::bits::unsigned;
-use ahb::lite::{AhbLite, Subordinate, NONSEQ, IDLE};
+use ahb::lite::{AhbLite, Subordinate, NONSEQ, IDLE, OKAY, ERROR};
 
 // A one-register Subordinate with no wait states: the address phase records
 // a write, the following data phase stores `hwdata`.
@@ -14,12 +14,12 @@ impl Register {
             if write_pending {
                 value = bus.hwdata;
             }
-            write_pending = if bus.htrans == NONSEQ { bus.hwrite } else { '0' };
+            write_pending = Bit(bus.htrans == NONSEQ) and bus.hwrite;
         }
     }
     bus.hrdata = value;
     bus.hready = '1';
-    bus.hresp = '0';
+    bus.hresp = OKAY;
 }
 
 #[test]
@@ -41,5 +41,5 @@ impl AhbLiteTest {
     clk = '1'; await 1ns; clk = '0';
     bus.htrans = IDLE;
     await 1ns;
-    assert!(bus.hrdata == 0xA5A5_0F0F and bus.hresp == '0', "read data phase returns the written word");
+    assert!(bus.hrdata == 0xA5A5_0F0F and bus.hresp == OKAY, "read data phase returns the written word");
 }

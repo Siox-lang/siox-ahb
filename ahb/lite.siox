@@ -23,7 +23,7 @@ pub struct AhbLite<A: integer, D: integer> {
     pub hwdata: unsigned[D],
     pub hrdata: unsigned[D],
     pub hready: Bit,
-    pub hresp: Bit       // '0' OKAY, '1' ERROR
+    pub hresp: Bit
 }
 
 pub view Manager<A: integer, D: integer> for AhbLite<A, D> {
@@ -45,6 +45,10 @@ pub const SEQ: integer = 3;
 // `hburst` encodings.
 pub const SINGLE: integer = 0;
 pub const INCR: integer = 1;
+
+// `hresp` encodings.
+pub const OKAY: Bit = '0';
+pub const ERROR: Bit = '1';
 
 // One Manager to `N` Subordinates. Subordinate `i` owns the `2^REGION` bytes
 // at `i << REGION`. It stands in for the spec's decoder and multiplexer over
@@ -94,11 +98,11 @@ impl<A: integer, D: integer, N: integer, REGION: integer> Interconnect<A, D, N, 
 
     if error == 1 {
         up.hready = '0';
-        up.hresp = '1';
+        up.hresp = ERROR;
         up.hrdata = 0;
     } else if error == 2 {
         up.hready = '1';
-        up.hresp = '1';
+        up.hresp = ERROR;
         up.hrdata = 0;
     } else if owner < N {
         up.hready = down[owner].hready;
@@ -106,7 +110,7 @@ impl<A: integer, D: integer, N: integer, REGION: integer> Interconnect<A, D, N, 
         up.hrdata = down[owner].hrdata;
     } else {
         up.hready = '1';
-        up.hresp = '0';
+        up.hresp = OKAY;
         up.hrdata = 0;
     }
 }
